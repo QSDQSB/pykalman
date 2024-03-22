@@ -121,7 +121,7 @@ def _loglikelihoods(observation_matrices, observation_offsets,
         observation matrices for t in [0...n_timesteps-1]
     observation_offsets : [n_timesteps, n_dim_obs] or [n_dim_obs] array
         offsets for observations for t = [0...n_timesteps-1]
-    observation_covariance : [n_dim_obs, n_dim_obs] array
+    observation_covariance : [*n_timesteps*, n_dim_obs, n_dim_obs] array
         covariance matrix for all observations
     predicted_state_means : [n_timesteps, n_dim_state] array
         mean of state at time t given observations from times
@@ -162,7 +162,9 @@ def _loglikelihoods(observation_matrices, observation_offsets,
                 np.dot(observation_matrix,
                        np.dot(predicted_state_covariance,
                               observation_matrix.T))
-                + observation_covariance
+                + _last_dims(
+                observation_covariance, t
+            )
             )
             loglikelihoods[t] = log_multivariate_normal_density(
                 observation[np.newaxis, :],
@@ -361,19 +363,18 @@ def _filter(transition_matrices, observation_matrices, transition_covariance,
     filtered_state_covariances = np.zeros(
         (n_timesteps, n_dim_state, n_dim_state)
     )
-
     for t in range(n_timesteps):
         if t == 0:
             predicted_state_means[t] = initial_state_mean
             predicted_state_covariances[t] = initial_state_covariance
         else:
             transition_matrix = _last_dims(transition_matrices, t - 1)
-            transition_covariance = _last_dims(transition_covariance, t - 1)
+            cur_transition_covariance = _last_dims(transition_covariance, t - 1)
             transition_offset = _last_dims(transition_offsets, t - 1, ndims=1)
             predicted_state_means[t], predicted_state_covariances[t] = (
                 _filter_predict(
                     transition_matrix,
-                    transition_covariance,
+                    cur_transition_covariance,
                     transition_offset,
                     filtered_state_means[t - 1],
                     filtered_state_covariances[t - 1]
@@ -381,12 +382,11 @@ def _filter(transition_matrices, observation_matrices, transition_covariance,
             )
 
         observation_matrix = _last_dims(observation_matrices, t)
-        observation_covariance = _last_dims(observation_covariance, t)
         observation_offset = _last_dims(observation_offsets, t, ndims=1)
         (kalman_gains[t], filtered_state_means[t],
          filtered_state_covariances[t]) = (
             _filter_correct(observation_matrix,
-                observation_covariance,
+                _last_dims(observation_covariance, t),
                 observation_offset,
                 predicted_state_means[t],
                 predicted_state_covariances[t],
@@ -973,7 +973,7 @@ class KalmanFilter(object):
     transition_covariance : [n_dim_state, n_dim_state] array-like
         Also known as :math:`Q`.  state transition covariance matrix for times
         [0...n_timesteps-2]
-    observation_covariance : [n_dim_obs, n_dim_obs] array-like
+    observation_covariance : [*n_timesteps*, n_dim_obs, n_dim_obs] array-like 
         Also known as :math:`R`.  observation covariance matrix for times
         [0...n_timesteps-1]
     transition_offsets : [n_timesteps-1, n_dim_state] or [n_dim_state] \
@@ -1097,7 +1097,7 @@ class KalmanFilter(object):
                 transition_offset = _last_dims(
                     transition_offsets, t - 1, ndims=1
                 )
-                transition_covariance = _last_dims(
+                cur_transition_covariance = _last_dims(
                     transition_covariance, t - 1
                 )
                 states[t] = (
@@ -1105,7 +1105,7 @@ class KalmanFilter(object):
                     + transition_offset
                     + rng.multivariate_normal(
                         np.zeros(n_dim_state),
-                        transition_covariance.newbyteorder('=')
+                        cur_transition_covariance.newbyteorder('=')
                     )
                 )
 
@@ -1115,7 +1115,7 @@ class KalmanFilter(object):
             observation_offset = _last_dims(
                 observation_offsets, t, ndims=1
             )
-            observation_covariance = _last_dims(
+            cur_observation_covariance = _last_dims(
                 observation_covariance, t
             )
             observations[t] = (
@@ -1123,7 +1123,7 @@ class KalmanFilter(object):
                 + observation_offset
                 + rng.multivariate_normal(
                     np.zeros(n_dim_obs),
-                    observation_covariance.newbyteorder('=')
+                    cur_observation_covariance.newbyteorder('=')
                 )
             )
 
